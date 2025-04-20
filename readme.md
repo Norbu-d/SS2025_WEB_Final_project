@@ -22,6 +22,14 @@
 - The form displays informational text about policies and offers navigation to the login page. The layout is responsive with a dark theme.
 -  It ends with a footer containing common links and copyright info..
 
+### Home Page -> (/)
+
+
+- *LeftSidebar*: Provides a vertical navigation menu with icons for Home, Search, Explore, Reels, Messages, Notifications, Create, Profile, and More.
+- *MiddleContent*: Displays user stories in a horizontal scroll area and a feed with posts, each featuring avatars, images, captions, and interaction buttons (like, comment, share, save).
+- *RightSidebar*: Shows the current user profile, followed by suggested accounts and useful links in the footer.
+
+These components are imported in homePage.tsx and imported via app.tsx.
 
 ### Reels Page -> (/reels)
 
