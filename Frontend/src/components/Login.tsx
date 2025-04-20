@@ -3,9 +3,12 @@ import { Lock, Mail } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardFooter, CardHeader } from './ui/card';
 import { Input } from './ui/input';
-import { Separator } from './ui/separator';
+import { useNavigate } from 'react-router-dom';
+
 
 export function InstagramLogin() {
+    const navigate = useNavigate();
+
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-black">
       {/* Left side with image and text */}
@@ -17,7 +20,7 @@ export function InstagramLogin() {
           className="absolute top-12 left-12 h-17 w-auto"
         />
         
-        {/* Text moved down */}
+        {/* Text*/}
         <div className="absolute top-35 text-white text-5xl font-light mb-8 w-full text-center">
           Share what you're into with the <br />
           people <span className="text-orange-500">who</span>{' '}
@@ -25,7 +28,7 @@ export function InstagramLogin() {
           <span className="text-fuchsia-500">you</span>.
         </div>
 
-        {/* Main image moved down */}
+        {/* Main image  */}
         <div className="relative w-full h-full flex items-center justify-center mt-32">
           <img 
             src="/src/assets/login.png"
@@ -35,7 +38,7 @@ export function InstagramLogin() {
         </div>
       </div>
 
-{/* Right side with login form - moved more to the left */}
+{/* Right side with login form  */}
 <div className="w-full md:w-1/2 lg:w-2/5 flex items-center justify-start p-4 pl-4 md:pl-4">
   <Card className="w-full max-w-[420px] border-none shadow-none bg-transparent">
     
@@ -76,6 +79,7 @@ export function InstagramLogin() {
       <Button 
         variant="outline" 
         className="w-full border border-[#2a2a2a] text-white bg-transparent hover:bg-[#1f1f1f] h-[55px] text-sm rounded-full px-8"
+        onClick={() => navigate('/Signup')}
       >
         Create new account
       </Button>
