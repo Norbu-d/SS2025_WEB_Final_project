@@ -1,64 +1,37 @@
-const pool = require('../config/db');
+const express = require('express');
+const router = express.Router();
+const postController = require('../controllers/postController');
+const authMiddleware = require('../middleware/auth');
+const upload = require('../utils/upload');
 
-class Post {
-    static async create({ user_id, image_url, caption }) {
-        const [result] = await pool.query(
-            'INSERT INTO posts (user_id, image_url, caption) VALUES (?, ?, ?)',
-            [user_id, image_url, caption]
-        );
-        return this.findById(result.insertId);
-    }
+// @route   POST /api/posts
+// @desc    Create a post
+// @access  Private
+router.post(
+  '/',
+  authMiddleware,
+  upload.single('image'),
+  postController.createPost
+);
 
-    static async findById(id) {
-        const [rows] = await pool.query(`
-            SELECT p.*, u.username, u.profile_picture 
-            FROM posts p 
-            JOIN users u ON p.user_id = u.id 
-            WHERE p.id = ?
-        `, [id]);
-        return rows[0];
-    }
+// @route   GET /api/posts
+// @desc    Get all posts
+// @access  Public
+router.get('/', postController.getPosts);
 
-    static async findByUserId(user_id) {
-        const [rows] = await pool.query(`
-            SELECT p.*, u.username, u.profile_picture 
-            FROM posts p 
-            JOIN users u ON p.user_id = u.id 
-            WHERE p.user_id = ? 
-            ORDER BY p.created_at DESC
-        `, [user_id]);
-        return rows;
-    }
+// @route   GET /api/posts/:postId
+// @desc    Get single post
+// @access  Public
+router.get('/:postId', postController.getPost);
 
-    static async delete(id, user_id) {
-        await pool.query('DELETE FROM posts WHERE id = ? AND user_id = ?', [id, user_id]);
-    }
+// @route   DELETE /api/posts/:postId
+// @desc    Delete a post
+// @access  Private
+router.delete('/:postId', authMiddleware, postController.deletePost);
 
-    static async getFeed(user_id, limit = 10, offset = 0) {
-        const [rows] = await pool.query(`
-            SELECT p.*, u.username, u.profile_picture 
-            FROM posts p
-            JOIN users u ON p.user_id = u.id
-            WHERE p.user_id IN (
-                SELECT following_id FROM followers WHERE follower_id = ?
-            )
-            OR p.user_id = ?
-            ORDER BY p.created_at DESC
-            LIMIT ? OFFSET ?
-        `, [user_id, user_id, limit, offset]);
-        return rows;
-    }
+// @route   GET /api/posts/users/:userId/posts
+// @desc    Get all posts by a user
+// @access  Public
+router.get('/users/:userId/posts', postController.getUserPosts);
 
-    static async getAll(limit = 10, offset = 0) {
-        const [rows] = await pool.query(`
-            SELECT p.*, u.username, u.profile_picture 
-            FROM posts p 
-            JOIN users u ON p.user_id = u.id 
-            ORDER BY p.created_at DESC 
-            LIMIT ? OFFSET ?
-        `, [limit, offset]);
-        return rows;
-    }
-}
-
-module.exports = Post;
+module.exports = router;

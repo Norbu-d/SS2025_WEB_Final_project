@@ -3,30 +3,62 @@ const router = express.Router();
 const postController = require('../controllers/postController');
 const authMiddleware = require('../middleware/auth');
 const upload = require('../utils/upload');
+const rateLimit = require('express-rate-limit');
+
+// Rate limiting for post creation
+const createPostLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each user to 5 post creations per window
+  message: 'Too many post creations. Please try again later.',
+  skip: req => !req.user // Skip rate limiting for non-authenticated requests
+});
 
 // @route   POST /api/posts
-// @desc    Create a post
+// @desc    Create a post with image upload
 // @access  Private
-router.post('/', authMiddleware, upload.single('image'), postController.createPost);
+router.post(
+  '/',
+  authMiddleware,
+  createPostLimiter,
+  upload, // Using our improved upload middleware
+  postController.createPost
+);
 
 // @route   GET /api/posts
-// @desc    Get all posts
+// @desc    Get all posts (feed)
 // @access  Public
-router.get('/', postController.getPosts);
+router.get(
+  '/',
+  postController.getPosts
+);
 
 // @route   GET /api/posts/:postId
 // @desc    Get single post
 // @access  Public
-router.get('/:postId', postController.getPost);
+router.get(
+  '/:postId',
+  postController.validatePostId,
+  postController.getPost
+);
 
 // @route   DELETE /api/posts/:postId
 // @desc    Delete a post
-// @access  Private (only post owner)
-router.delete('/:postId', authMiddleware, postController.deletePost);
+// @access  Private (Post owner only)
+router.delete(
+  '/:postId',
+  authMiddleware,
+  postController.validatePostId,
+  postController.checkPostOwnership,
+  postController.deletePost
+);
 
-// @route   GET /api/users/:userId/posts
-// @desc    Get all posts by a user
+// @route   GET /api/posts/users/:userId/posts
+// @desc    Get all posts by a specific user
 // @access  Public
-router.get('/users/:userId/posts', postController.getUserPosts);
+router.get(
+  '/users/:userId/posts',
+  postController.validateUserId,
+  postController.getUserPosts
+);
 
 module.exports = router;

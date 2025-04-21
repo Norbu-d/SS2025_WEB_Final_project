@@ -1,4 +1,4 @@
-const User = require('../models/User');
+const prisma = require('../prismaClient');
 const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
@@ -13,7 +13,19 @@ exports.getUserById = async (req, res) => {
       });
     }
 
-    const user = await User.findById(userId);
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        full_name: true,
+        profile_picture: true,
+        bio: true,
+        website: true
+      }
+    });
+
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -30,15 +42,7 @@ exports.getUserById = async (req, res) => {
 
     res.json({
       success: true,
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        full_name: user.full_name,
-        profile_picture: user.profile_picture,
-        bio: user.bio,
-        website: user.website
-      }
+      user
     });
   } catch (error) {
     console.error('Get user error:', error);
@@ -53,7 +57,6 @@ exports.updateProfile = async (req, res) => {
   try {
     let { full_name, bio, website } = req.body;
 
-    // Validate full_name
     if (!full_name || full_name.trim() === '') {
       return res.status(400).json({
         success: false,
@@ -61,15 +64,26 @@ exports.updateProfile = async (req, res) => {
       });
     }
 
-    // Trim inputs for safety
     full_name = full_name.trim();
     bio = bio ? bio.trim() : null;
     website = website ? website.trim() : null;
 
-    const updatedUser = await User.updateProfile(req.user.id, { 
-      full_name, 
-      bio, 
-      website 
+    const updatedUser = await prisma.user.update({
+      where: { id: req.user.id },
+      data: { 
+        full_name, 
+        bio, 
+        website 
+      },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        full_name: true,
+        profile_picture: true,
+        bio: true,
+        website: true
+      }
     });
 
     res.json({ 
@@ -95,7 +109,11 @@ exports.updateProfilePicture = async (req, res) => {
       });
     }
 
-    const user = await User.findById(req.user.id);
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { profile_picture: true }
+    });
+
     const oldPicturePath = path.join(__dirname, '..', user.profile_picture);
 
     if (fs.existsSync(oldPicturePath) && !oldPicturePath.includes('default.jpg')) {
@@ -103,7 +121,19 @@ exports.updateProfilePicture = async (req, res) => {
     }
 
     const profile_picture = `/uploads/${req.file.filename}`;
-    const updatedUser = await User.updateProfilePicture(req.user.id, profile_picture);
+    const updatedUser = await prisma.user.update({
+      where: { id: req.user.id },
+      data: { profile_picture },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        full_name: true,
+        profile_picture: true,
+        bio: true,
+        website: true
+      }
+    });
     
     res.json({ 
       success: true, 
@@ -132,7 +162,12 @@ exports.changePassword = async (req, res) => {
       });
     }
 
-    const isMatch = await User.verifyPassword(req.user.id, currentPassword);
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { password: true }
+    });
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
     if (!isMatch) {
       return res.status(400).json({ 
         success: false,
@@ -143,7 +178,12 @@ exports.changePassword = async (req, res) => {
       });
     }
 
-    await User.updatePassword(req.user.id, newPassword);
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: { password: hashedPassword }
+    });
+
     res.json({ 
       success: true, 
       message: 'Password updated successfully' 

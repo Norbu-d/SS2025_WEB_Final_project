@@ -1,10 +1,15 @@
 const jwt = require('jsonwebtoken');
 const { validationResult } = require('express-validator');
-const User = require('../models/User');
+const prisma = require('../prismaClient');
 const { jwt: jwtConfig } = require('../config/jwt');
+const bcrypt = require('bcryptjs');
+const logger = require('../utils/logger');
+
+// Password complexity requirements
+const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
 
 exports.register = async (req, res) => {
-  // Validate request
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({
@@ -19,60 +24,87 @@ exports.register = async (req, res) => {
   try {
     const { username, email, password, full_name } = req.body;
 
-    // Check if user already exists
-    const existingUser = await User.findByEmail(email);
-    if (existingUser) {
+    // Additional password validation
+    if (password.length < PASSWORD_MIN_LENGTH) {
       return res.status(400).json({
         success: false,
         errors: [{
-          field: 'email',
-          message: 'Email already in use'
+          field: 'password',
+          message: 'Password must be at least 8 characters'
         }]
       });
     }
 
-    // Create new user
-    const user = await User.create({ username, email, password, full_name });
-    
-    // Generate JWT token
-    const payload = { 
-      user: { 
-        id: user.id,
-        username: user.username
-      } 
-    };
-    
-    const token = jwt.sign(payload, jwtConfig.secret, { 
-      expiresIn: jwtConfig.expiresIn 
+    if (!PASSWORD_REGEX.test(password)) {
+      return res.status(400).json({
+        success: false,
+        errors: [{
+          field: 'password',
+          message: 'Password must contain at least one uppercase letter, one lowercase letter, one number and one special character'
+        }]
+      });
+    }
+
+    // Check for existing user
+    const existingUser = await prisma.user.findFirst({
+      where: { OR: [{ email }, { username }] }
     });
 
-    // Return success response
-    res.status(201).json({
-      success: true,
-      token,
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        full_name: user.full_name
+    if (existingUser) {
+      const field = existingUser.email === email ? 'email' : 'username';
+      return res.status(409).json({
+        success: false,
+        errors: [{
+          field,
+          message: `${field} already in use`
+        }]
+      });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 12);
+    
+    // Create user
+    const user = await prisma.user.create({
+      data: {
+        username,
+        email,
+        password: hashedPassword,
+        full_name
+      },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        full_name: true,
+        created_at: true
       }
     });
 
-  } catch (error) {
-    console.error('Registration error:', error);
-    
-    // Handle specific errors
-    if (error.code === 'ER_DUP_ENTRY') {
-      return res.status(400).json({
-        success: false,
-        errors: [{
-          field: 'username',
-          message: 'Username already taken'
-        }]
-      });
-    }
+    // Generate JWT
+    const token = jwt.sign(
+      { userId: user.id },
+      jwtConfig.secret,
+      { expiresIn: jwtConfig.expiresIn }
+    );
 
-    res.status(500).json({
+    // Set secure HTTP-only cookie
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+
+    return res.status(201).json({
+      success: true,
+      user,
+      token // Also return token in response (for mobile clients)
+    });
+
+  } catch (error) {
+    logger.error('Registration error:', error);
+    return res.status(500).json({
       success: false,
       message: 'Registration failed',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
@@ -81,86 +113,91 @@ exports.register = async (req, res) => {
 };
 
 exports.login = async (req, res) => {
-  // Validate request
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({
       success: false,
-      errors: errors.array().map(err => ({
-        field: err.param,
-        message: err.msg
-      }))
+      errors: errors.array()
     });
   }
 
   try {
     const { email, password } = req.body;
 
-    // Find user by email
-    const user = await User.findByEmail(email);
+    // Find user with password
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        full_name: true,
+        password: true
+      }
+    });
+
     if (!user) {
       return res.status(401).json({
         success: false,
-        errors: [{
-          field: 'email',
-          message: 'Invalid credentials'
-        }]
+        errors: [{ message: 'Invalid credentials' }] // Don't specify field for security
       });
     }
 
     // Verify password
-    const isPasswordValid = await User.verifyPassword(user.id, password);
-    if (!isPasswordValid) {
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
       return res.status(401).json({
         success: false,
-        errors: [{
-          field: 'password',
-          message: 'Invalid credentials'
-        }]
+        errors: [{ message: 'Invalid credentials' }]
       });
     }
 
-    // Generate JWT token
-    const payload = { 
-      user: { 
-        id: user.id,
-        username: user.username
-      } 
-    };
-    
-    const token = jwt.sign(payload, jwtConfig.secret, { 
-      expiresIn: jwtConfig.expiresIn 
+    // Generate JWT
+    const token = jwt.sign(
+      { userId: user.id },
+      jwtConfig.secret,
+      { expiresIn: jwtConfig.expiresIn }
+    );
+
+    // Set secure HTTP-only cookie
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
 
-    // Return success response
-    res.json({
+    // Remove password before sending response
+    const { password: _, ...userData } = user;
+
+    return res.json({
       success: true,
-      token,
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        full_name: user.full_name
-      }
+      user: userData,
+      token // Also return token in response (for mobile clients)
     });
 
   } catch (error) {
-    console.error('Login error:', error);
-    
-    res.status(500).json({
+    logger.error('Login error:', error);
+    return res.status(500).json({
       success: false,
-      message: 'Login failed',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      message: 'Login failed'
     });
   }
 };
 
-// Add this new method for token verification
 exports.verifyToken = async (req, res) => {
   try {
-    // The auth middleware already verified the token
-    const user = await User.findById(req.user.id);
-    
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        full_name: true,
+        profile_picture: true
+      }
+    });
+
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -168,19 +205,14 @@ exports.verifyToken = async (req, res) => {
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        full_name: user.full_name
-      }
+      user
     });
-    
+
   } catch (error) {
-    console.error('Token verification error:', error);
-    res.status(500).json({
+    logger.error('Token verification error:', error);
+    return res.status(500).json({
       success: false,
       message: 'Token verification failed'
     });
