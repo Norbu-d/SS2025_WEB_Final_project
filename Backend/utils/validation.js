@@ -1,85 +1,141 @@
-const { body, validationResult } = require('express-validator');
-const User = require('../models/User');
+const { body } = require("express-validator");
+const prisma = require("../prismaClient");
 
-const validations = {
-  register: [
-    body('username')
-      .trim()
-      .notEmpty().withMessage('Username is required')
-      .isLength({ min: 3 }).withMessage('Must be at least 3 characters')
-      .custom(async (username) => {
-        const user = await User.findByUsername(username);
-        if (user) throw new Error('Username already in use');
-        return true;
-      }),
-    body('email')
-      .trim()
-      .normalizeEmail()
-      .isEmail().withMessage('Invalid email')
-      .custom(async (email) => {
-        const user = await User.findByEmail(email);
-        if (user) throw new Error('Email already in use');
-        return true;
-      }),
-    body('password')
-      .isLength({ min: 6 }).withMessage('Must be at least 6 characters')
-      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).*$/)
-      .withMessage('Password must contain at least one uppercase letter, one lowercase letter, and one number'),
-    body('full_name')
-      .trim()
-      .notEmpty().withMessage('Full name is required')
-  ],
+// Register Validation
+const validateRegister = [
+  body("username")
+    .trim()
+    .notEmpty()
+    .withMessage("Username is required")
+    .isLength({ min: 3, max: 20 })
+    .withMessage("Username must be between 3 and 20 characters")
+    .custom(async (username) => {
+      const user = await prisma.user.findUnique({ where: { username } });
+      if (user) {
+        throw new Error("Username already in use");
+      }
+      return true;
+    }),
 
-  login: [
-    body('email')
-      .trim()
-      .normalizeEmail()
-      .isEmail().withMessage('Invalid email'),
-    body('password')
-      .notEmpty().withMessage('Password is required')
-  ],
+  body("email")
+    .trim()
+    .notEmpty()
+    .withMessage("Email is required")
+    .isEmail()
+    .withMessage("Invalid email format")
+    .custom(async (email) => {
+      const user = await prisma.user.findUnique({ where: { email } });
+      if (user) {
+        throw new Error("Email already in use");
+      }
+      return true;
+    }),
 
-  updateProfile: [
-    body('full_name')
-      .optional()
-      .trim()
-      .notEmpty().withMessage('Full name cannot be empty'),
-    body('bio')
-      .optional()
-      .trim()
-      .isLength({ max: 500 }).withMessage('Bio must be less than 500 characters'),
-    body('website')
-      .optional()
-      .trim()
-      .isURL().withMessage('Invalid website URL')
-      .matches(/^https?:\/\//).withMessage('Website must start with http:// or https://')
-  ],
+  body("password")
+    .notEmpty()
+    .withMessage("Password is required")
+    .isLength({ min: 8 })
+    .withMessage("Password must be at least 8 characters")
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).+$/)
+    .withMessage("Password must include uppercase, lowercase, number and special character"),
 
-  changePassword: [
-    body('currentPassword')
-      .notEmpty().withMessage('Current password is required'),
-    body('newPassword')
-      .isLength({ min: 6 }).withMessage('Must be at least 6 characters')
-      .not().equals(body('currentPassword')).withMessage('New password must be different from current password')
-      .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).*$/)
-      .withMessage('Password must contain at least one uppercase letter, one lowercase letter, and one number')
-  ]
+  body("full_name")
+    .trim()
+    .notEmpty()
+    .withMessage("Full name is required")
+    .isLength({ min: 3, max: 50 })
+    .withMessage("Full name must be between 3 and 50 characters"),
+];
+
+// Login Validation
+const validateLogin = [
+  body("email")
+    .trim()
+    .notEmpty()
+    .withMessage("Email is required")
+    .isEmail()
+    .withMessage("Invalid email format"),
+  body("password")
+    .notEmpty()
+    .withMessage("Password is required"),
+];
+
+// Update Profile Validation
+const validateUpdateProfile = [
+  body("full_name")
+    .trim()
+    .notEmpty()
+    .withMessage("Full name is required")
+    .isLength({ min: 3, max: 50 })
+    .withMessage("Full name must be between 3 and 50 characters"),
+  
+  body("bio")
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage("Bio must be less than 500 characters"),
+  
+  body("website")
+    .optional()
+    .trim()
+    .isURL()
+    .withMessage("Invalid website URL")
+];
+
+// Change Password Validation
+const validateChangePassword = [
+  body("currentPassword")
+    .notEmpty()
+    .withMessage("Current password is required"),
+  
+  body("newPassword")
+    .notEmpty()
+    .withMessage("New password is required")
+    .isLength({ min: 8 })
+    .withMessage("Password must be at least 8 characters")
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).+$/)
+    .withMessage("Password must include uppercase, lowercase, number and special character")
+    .custom((value, { req }) => {
+      if (value === req.body.currentPassword) {
+        throw new Error("New password must be different from current password");
+      }
+      return true;
+    })
+];
+
+// Switch between validations
+const validate = (type) => {
+  switch (type) {
+    case "register":
+      return validateRegister;
+    case "login":
+      return validateLogin;
+    case "updateProfile":
+      return validateUpdateProfile;
+    case "changePassword":
+      return validateChangePassword;
+    default:
+      throw new Error("Unknown validation type");
+  }
 };
 
-exports.validate = (validationName) => {
-  return validations[validationName] || [];
-};
-
-exports.validationResult = (req, res, next) => {
-  const errors = validationResult(req);
+// Handle validation result
+const handleValidationErrors = (req, res, next) => {
+  const errors = require("express-validator").validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ 
+    return res.status(400).json({
       success: false,
-      errors: errors.array().map(err => ({
-        param: err.param,
-        message: err.msg
-      }))
+      errors: errors.array().map((e) => ({ 
+        param: e.param,
+        message: e.msg 
+      })),
     });
   }
   next();
+};
+
+
+module.exports = {
+  validate,
+  handleValidationErrors
 };

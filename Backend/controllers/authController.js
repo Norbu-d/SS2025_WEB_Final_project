@@ -1,51 +1,13 @@
 const jwt = require('jsonwebtoken');
-const { validationResult } = require('express-validator');
+const bcrypt = require('bcryptjs');
 const prisma = require('../prismaClient');
 const { jwt: jwtConfig } = require('../config/jwt');
-const bcrypt = require('bcryptjs');
 const logger = require('../utils/logger');
 
-// Password complexity requirements
-const PASSWORD_MIN_LENGTH = 8;
-const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-
-exports.register = async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({
-      success: false,
-      errors: errors.array().map(err => ({
-        field: err.param,
-        message: err.msg
-      }))
-    });
-  }
-
+const register = async (req, res) => {
   try {
     const { username, email, password, full_name } = req.body;
 
-    // Additional password validation
-    if (password.length < PASSWORD_MIN_LENGTH) {
-      return res.status(400).json({
-        success: false,
-        errors: [{
-          field: 'password',
-          message: 'Password must be at least 8 characters'
-        }]
-      });
-    }
-
-    if (!PASSWORD_REGEX.test(password)) {
-      return res.status(400).json({
-        success: false,
-        errors: [{
-          field: 'password',
-          message: 'Password must contain at least one uppercase letter, one lowercase letter, one number and one special character'
-        }]
-      });
-    }
-
-    // Check for existing user
     const existingUser = await prisma.user.findFirst({
       where: { OR: [{ email }, { username }] }
     });
@@ -61,10 +23,8 @@ exports.register = async (req, res) => {
       });
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
-    
-    // Create user
+
     const user = await prisma.user.create({
       data: {
         username,
@@ -81,14 +41,10 @@ exports.register = async (req, res) => {
       }
     });
 
-    // Generate JWT
-    const token = jwt.sign(
-      { userId: user.id },
-      jwtConfig.secret,
-      { expiresIn: jwtConfig.expiresIn }
-    );
+    const token = jwt.sign({ userId: user.id }, jwtConfig.secret, {
+      expiresIn: jwtConfig.expiresIn
+    });
 
-    // Set secure HTTP-only cookie
     res.cookie('token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -99,7 +55,7 @@ exports.register = async (req, res) => {
     return res.status(201).json({
       success: true,
       user,
-      token // Also return token in response (for mobile clients)
+      token
     });
 
   } catch (error) {
@@ -112,19 +68,10 @@ exports.register = async (req, res) => {
   }
 };
 
-exports.login = async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({
-      success: false,
-      errors: errors.array()
-    });
-  }
-
+const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Find user with password
     const user = await prisma.user.findUnique({
       where: { email },
       select: {
@@ -136,30 +83,17 @@ exports.login = async (req, res) => {
       }
     });
 
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        errors: [{ message: 'Invalid credentials' }] // Don't specify field for security
-      });
-    }
-
-    // Verify password
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
+    if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(401).json({
         success: false,
         errors: [{ message: 'Invalid credentials' }]
       });
     }
 
-    // Generate JWT
-    const token = jwt.sign(
-      { userId: user.id },
-      jwtConfig.secret,
-      { expiresIn: jwtConfig.expiresIn }
-    );
+    const token = jwt.sign({ userId: user.id }, jwtConfig.secret, {
+      expiresIn: jwtConfig.expiresIn
+    });
 
-    // Set secure HTTP-only cookie
     res.cookie('token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -167,28 +101,28 @@ exports.login = async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
 
-    // Remove password before sending response
     const { password: _, ...userData } = user;
 
     return res.json({
       success: true,
       user: userData,
-      token // Also return token in response (for mobile clients)
+      token
     });
 
   } catch (error) {
     logger.error('Login error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Login failed'
+      message: 'Login failed',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
 
-exports.verifyToken = async (req, res) => {
+const verifyToken = async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
+      where: { id: req.user.userId },
       select: {
         id: true,
         username: true,
@@ -214,7 +148,14 @@ exports.verifyToken = async (req, res) => {
     logger.error('Token verification error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Token verification failed'
+      message: 'Token verification failed',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
+};
+
+module.exports = {
+  register,
+  login,
+  verifyToken
 };

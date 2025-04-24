@@ -13,6 +13,14 @@ exports.getUserById = async (req, res) => {
       });
     }
 
+    // Ensure the requested user is the authenticated user
+    if (userId !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Unauthorized access'
+      });
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -22,7 +30,7 @@ exports.getUserById = async (req, res) => {
         full_name: true,
         profile_picture: true,
         bio: true,
-        website: true
+        created_at: true
       }
     });
 
@@ -30,13 +38,6 @@ exports.getUserById = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: 'User not found'
-      });
-    }
-
-    if (user.id !== req.user.id) {
-      return res.status(403).json({
-        success: false,
-        message: 'Unauthorized access'
       });
     }
 
@@ -48,32 +49,34 @@ exports.getUserById = async (req, res) => {
     console.error('Get user error:', error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error'
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
 
 exports.updateProfile = async (req, res) => {
   try {
-    let { full_name, bio, website } = req.body;
+    let { full_name, bio } = req.body;
 
     if (!full_name || full_name.trim() === '') {
       return res.status(400).json({
         success: false,
-        message: 'Full name is required'
+        errors: [{
+          param: 'full_name',
+          message: 'Full name is required'
+        }]
       });
     }
 
     full_name = full_name.trim();
     bio = bio ? bio.trim() : null;
-    website = website ? website.trim() : null;
 
     const updatedUser = await prisma.user.update({
       where: { id: req.user.id },
       data: { 
         full_name, 
-        bio, 
-        website 
+        bio 
       },
       select: {
         id: true,
@@ -82,7 +85,7 @@ exports.updateProfile = async (req, res) => {
         full_name: true,
         profile_picture: true,
         bio: true,
-        website: true
+        created_at: true
       }
     });
 
@@ -103,47 +106,35 @@ exports.updateProfile = async (req, res) => {
 exports.updateProfilePicture = async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        message: 'No file uploaded' 
+        message: 'No file uploaded'
       });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
-      select: { profile_picture: true }
-    });
-
-    const oldPicturePath = path.join(__dirname, '..', user.profile_picture);
-
-    if (fs.existsSync(oldPicturePath) && !oldPicturePath.includes('default.jpg')) {
-      fs.unlinkSync(oldPicturePath);
-    }
-
-    const profile_picture = `/uploads/${req.file.filename}`;
+    // Update user with new profile picture path
     const updatedUser = await prisma.user.update({
       where: { id: req.user.id },
-      data: { profile_picture },
+      data: { 
+        profile_picture: req.file.path 
+      },
       select: {
         id: true,
         username: true,
-        email: true,
-        full_name: true,
-        profile_picture: true,
-        bio: true,
-        website: true
+        profile_picture: true
       }
     });
-    
-    res.json({ 
-      success: true, 
-      user: updatedUser 
+
+    res.json({
+      success: true,
+      user: updatedUser
     });
   } catch (error) {
     console.error('Update profile picture error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to update profile picture'
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update profile picture',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -152,13 +143,10 @@ exports.changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
 
-    if (newPassword.length < 6) {
+    if (!currentPassword || !newPassword) {
       return res.status(400).json({
         success: false,
-        errors: [{ 
-          param: 'newPassword', 
-          message: 'Password must be at least 6 characters' 
-        }]
+        message: 'Both current and new password are required'
       });
     }
 
@@ -167,14 +155,18 @@ exports.changePassword = async (req, res) => {
       select: { password: true }
     });
 
+    if (!user) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'User not found' 
+      });
+    }
+
     const isMatch = await bcrypt.compare(currentPassword, user.password);
     if (!isMatch) {
       return res.status(400).json({ 
         success: false,
-        errors: [{ 
-          param: 'currentPassword', 
-          message: 'Current password is incorrect' 
-        }]
+        message: 'Current password is incorrect' 
       });
     }
 
@@ -192,7 +184,8 @@ exports.changePassword = async (req, res) => {
     console.error('Change password error:', error);
     res.status(500).json({ 
       success: false, 
-      message: 'Failed to change password'
+      message: 'Failed to change password',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };

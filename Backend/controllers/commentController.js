@@ -1,77 +1,154 @@
-// const Comment = require('../models/Comment');
-// const Post = require('../models/Post');
-// const User = require('../models/User');
-// const { createNotification } = require('./notificationController');
+// const { PrismaClient } = require('@prisma/client');
+// const prisma = new PrismaClient();
 
 // exports.createComment = async (req, res) => {
 //   try {
 //     const { content } = req.body;
-//     const postId = req.params.postId;
-    
-//     const comment = await Comment.create({
-//       user_id: req.user.id,
-//       post_id: postId,
-//       content
-//     });
+//     const postId = parseInt(req.params.postId);
+//     const userId = req.user.id;
 
-//     // Add notification
-//     const post = await Post.findById(postId);
-//     if (post.user_id !== req.user.id) {
-//       await createNotification({
-//         userId: post.user_id,
-//         senderId: req.user.id,
-//         postId,
-//         type: 'comment'
+//     // Validate input
+//     if (!content || content.trim() === '') {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Comment content is required'
 //       });
 //     }
 
-//     const user = await User.findById(req.user.id);
-//     comment.dataValues.user = {
-//       username: user.username,
-//       profile_picture: user.profile_picture
-//     };
+//     // Check if post exists
+//     const post = await prisma.post.findUnique({
+//       where: { id: postId }
+//     });
 
-//     res.status(201).json(comment);
+//     if (!post) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Post not found'
+//       });
+//     }
+
+//     // Create comment
+//     const comment = await prisma.comment.create({
+//       data: {
+//         content,
+//         user_id: userId,
+//         post_id: postId
+//       },
+//       include: {
+//         user: {
+//           select: {
+//             username: true,
+//             profile_picture: true
+//           }
+//         }
+//       }
+//     });
+
+//     res.status(201).json({
+//       success: true,
+//       data: comment
+//     });
+
 //   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({ message: 'Server Error' });
+//     console.error('Create comment error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to create comment',
+//       error: process.env.NODE_ENV === 'development' ? error.message : undefined
+//     });
 //   }
 // };
 
 // exports.getComments = async (req, res) => {
 //   try {
-//     const comments = await Comment.findAll({
-//       where: { post_id: req.params.postId },
-//       include: [{
-//         model: User,
-//         attributes: ['username', 'profile_picture']
-//       }],
-//       order: [['created_at', 'DESC']]
+//     const postId = parseInt(req.params.postId);
+
+//     // Check if post exists
+//     const postExists = await prisma.post.findUnique({
+//       where: { id: postId }
 //     });
-//     res.json(comments);
+
+//     if (!postExists) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Post not found'
+//       });
+//     }
+
+//     const comments = await prisma.comment.findMany({
+//       where: { post_id: postId },
+//       include: {
+//         user: {
+//           select: {
+//             username: true,
+//             profile_picture: true
+//           }
+//         }
+//       },
+//       orderBy: {
+//         created_at: 'desc'
+//       }
+//     });
+
+//     res.json({
+//       success: true,
+//       count: comments.length,
+//       data: comments
+//     });
+
 //   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({ message: 'Server Error' });
+//     console.error('Get comments error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to get comments',
+//       error: process.env.NODE_ENV === 'development' ? error.message : undefined
+//     });
 //   }
 // };
 
 // exports.deleteComment = async (req, res) => {
 //   try {
-//     const comment = await Comment.findOne({
-//       where: {
-//         id: req.params.commentId,
-//         user_id: req.user.id
+//     const commentId = parseInt(req.params.commentId);
+//     const userId = req.user.id;
+
+//     // Find comment
+//     const comment = await prisma.comment.findUnique({
+//       where: { id: commentId },
+//       include: {
+//         post: true
 //       }
 //     });
 
 //     if (!comment) {
-//       return res.status(404).json({ message: 'Comment not found' });
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Comment not found'
+//       });
 //     }
 
-//     await comment.destroy();
-//     res.json({ message: 'Comment deleted' });
+//     // Check if user is comment owner or post owner
+//     if (comment.user_id !== userId && comment.post.user_id !== userId) {
+//       return res.status(403).json({
+//         success: false,
+//         message: 'Not authorized to delete this comment'
+//       });
+//     }
+
+//     await prisma.comment.delete({
+//       where: { id: commentId }
+//     });
+
+//     res.json({
+//       success: true,
+//       message: 'Comment deleted successfully'
+//     });
+
 //   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({ message: 'Server Error' });
+//     console.error('Delete comment error:', error);
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to delete comment',
+//       error: process.env.NODE_ENV === 'development' ? error.message : undefined
+//     });
 //   }
 // };

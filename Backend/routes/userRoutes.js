@@ -1,23 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const { validate, validationResult } = require('../utils/validation');
+const { validate, handleValidationErrors } = require('../utils/validation');
 const userController = require('../controllers/userController');
 const authMiddleware = require('../middleware/auth');
-const upload = require('../utils/upload');
-const rateLimit = require('express-rate-limit');
-
-// Rate limiting for sensitive operations
-const sensitiveLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 requests per window
-  message: 'Too many attempts, please try again later'
-});
+const handleUpload = require('../utils/upload');
 
 // GET User by ID
-router.get(
-  '/users/:id',
-  authMiddleware,
-  userController.validateUserId,
+router.get('/users/:id', 
+  authMiddleware, 
   userController.getUserById
 );
 
@@ -25,8 +15,8 @@ router.get(
 router.put(
   '/profile',
   authMiddleware,
-  validate('updateProfile'),
-  validationResult,
+  ...validate('updateProfile'),
+  handleValidationErrors,
   userController.updateProfile
 );
 
@@ -34,7 +24,7 @@ router.put(
 router.put(
   '/profile/picture',
   authMiddleware,
-  upload, // Using our improved upload middleware
+  handleUpload,
   userController.updateProfilePicture
 );
 
@@ -42,9 +32,8 @@ router.put(
 router.put(
   '/password',
   authMiddleware,
-  sensitiveLimiter,
-  validate('changePassword'),
-  validationResult,
+  ...validate('changePassword'),
+  handleValidationErrors,
   userController.changePassword
 );
 

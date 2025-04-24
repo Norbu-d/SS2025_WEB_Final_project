@@ -21,8 +21,9 @@ model User {
   posts     Post[]
   likes     Like[]
   comments  Comment[]
-  followers Follow[]  @relation("follower")
-  following Follow[]  @relation("following")
+  // ... other fields ...
+  followers  Follow[] @relation("following") // Users who follow this user
+  following  Follow[] @relation("follower")  // Users this user follows
 }
 
 model Post {
@@ -37,11 +38,14 @@ model Post {
 }
 
 model Like {
-  id      Int  @id @default(autoincrement())
-  user_id Int
-  post_id Int
-  user    User @relation(fields: [user_id], references: [id])
-  post    Post @relation(fields: [post_id], references: [id])
+  id         Int      @id @default(autoincrement())
+  user_id    Int
+  post_id    Int
+  user       User     @relation(fields: [user_id], references: [id])
+  post       Post     @relation(fields: [post_id], references: [id])
+  created_at DateTime @default(now()) // Add this line
+  
+  @@unique([user_id, post_id])
 }
 
 model Comment {
@@ -58,9 +62,10 @@ model Follow {
   id           Int      @id @default(autoincrement())
   follower_id  Int
   following_id Int
+  created_at   DateTime @default(now())
+  
   follower     User     @relation("follower", fields: [follower_id], references: [id])
   following    User     @relation("following", fields: [following_id], references: [id])
-  created_at   DateTime @default(now())
-
+  
   @@unique([follower_id, following_id])
 }

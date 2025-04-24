@@ -2,24 +2,13 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Configure upload directory
-const uploadDir = path.join(__dirname, '../uploads');
+// Configure upload directory (now separates posts from profile pictures)
+const uploadDir = path.join(__dirname, '../uploads/posts');
 
-// Create uploads directory if it doesn't exist
-const ensureUploadsDirExists = () => {
-  try {
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-      console.log('Uploads directory created');
-    }
-  } catch (err) {
-    console.error('Error creating uploads directory:', err);
-    throw new Error('Failed to initialize upload directory');
-  }
-};
-
-// Initialize directory on startup
-ensureUploadsDirExists();
+// Create directory if missing
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -28,73 +17,70 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname).toLowerCase();
-    const originalName = path.basename(file.originalname, ext)
-      .replace(/[^a-z0-9]/gi, '_')
-      .toLowerCase();
-    cb(null, `${originalName}-${uniqueSuffix}${ext}`);
+    cb(null, `post-${uniqueSuffix}${ext}`); // Clear post-specific naming
   }
 });
 
 const fileFilter = (req, file, cb) => {
   const allowedTypes = /jpeg|jpg|png|gif|webp/;
-  const mimetype = allowedTypes.test(file.mimetype);
   const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+  const mimetype = allowedTypes.test(file.mimetype);
   
-  if (mimetype && extname) {
-    return cb(null, true);
-  }
-  
-  cb(new Error(`Invalid file type. Only ${allowedTypes} are allowed!`), false);
+  if (mimetype && extname) return cb(null, true);
+  cb(new Error('Only images (JPEG/JPG/PNG/GIF/WEBP) allowed!'), false);
 };
 
-const limits = {
-  fileSize: 5 * 1024 * 1024, // 5MB
-  files: 1 // Limit to single file uploads
-};
-
-const upload = multer({
+// Key change: Now expects 'image' for posts (not 'profile_picture')
+const upload = multer({ 
   storage,
   fileFilter,
-  limits
-}).single('image');
+  limits: { 
+    fileSize: 5 * 1024 * 1024, // 5MB
+    files: 1 
+  }
+}).single('image'); // <<< Critical change for post uploads
 
-// Custom error handler (replaces the need for external error utility)
-const createUploadError = (status, message) => {
-  const error = new Error(message);
-  error.status = status;
-  return error;
-};
-
-// Custom middleware to handle uploads and errors
 const handleUpload = (req, res, next) => {
   upload(req, res, (err) => {
+    // Handle missing file first
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded. Use field name "image" for posts.'
+      });
+    }
+
+    // Handle errors
     if (err) {
+      let message = 'Upload failed';
       if (err instanceof multer.MulterError) {
-        // Handle specific Multer errors
         switch (err.code) {
           case 'LIMIT_FILE_SIZE':
-            return next(createUploadError(413, 'File too large. Maximum 5MB allowed'));
-          case 'LIMIT_FILE_COUNT':
-            return next(createUploadError(400, 'Too many files. Only one file allowed'));
+            message = 'Max file size is 5MB';
+            break;
           case 'LIMIT_UNEXPECTED_FILE':
-            return next(createUploadError(400, 'Unexpected file field'));
-          default:
-            return next(createUploadError(400, err.message));
+            message = 'Use field name "image" for post uploads';
+            break;
         }
-      } else if (err) {
-        // Handle other errors
-        return next(createUploadError(500, 'File upload failed'));
+      } else if (err.message.includes('Only images')) {
+        message = err.message;
       }
+
+      // Cleanup failed upload
+      if (req.file) fs.unlinkSync(req.file.path);
+      
+      return res.status(400).json({ 
+        success: false, 
+        message 
+      });
     }
-    
-    // If no file was uploaded (and it's required)
-    if (!req.file) {
-      return next(createUploadError(400, 'No file uploaded'));
+
+    // Windows path fix
+    if (process.platform === 'win32') {
+      req.file.path = req.file.path.replace(/\\/g, '/');
     }
-    
-    // Add file path to request for easier access in controllers
-    req.file.path = req.file.path.replace(/\\/g, '/'); // Convert Windows paths
-    next();
+
+    next(); // Successful upload
   });
 };
 

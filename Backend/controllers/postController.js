@@ -2,6 +2,19 @@ const prisma = require('../prismaClient');
 const path = require('path');
 const fs = require('fs');
 
+// Helper function to transform post data
+const transformPostData = (post) => ({
+  id: post.id,
+  image_url: post.image_url,
+  caption: post.caption,
+  created_at: post.created_at,
+  user: post.user,
+  like_count: post.likes?.length || post._count?.likes || 0,
+  comment_count: post.comments?.length || post._count?.comments || 0,
+  likes: post.likes || [],
+  comments: post.comments || []
+});
+
 // Create a new post
 exports.createPost = async (req, res) => {
   try {
@@ -21,7 +34,6 @@ exports.createPost = async (req, res) => {
     // Create post in database
     const post = await prisma.post.create({
       data: {
-        user_id: req.user.id,
         image_url: imageUrl,
         caption,
         user: {
@@ -34,21 +46,19 @@ exports.createPost = async (req, res) => {
             username: true,
             profile_picture: true
           }
+        },
+        _count: {
+          select: {
+            likes: true,
+            comments: true
+          }
         }
       }
     });
 
-    // Prepare response data
-    const responseData = {
-      ...post,
-      like_count: 0,
-      comment_count: 0,
-      comments: []
-    };
-
     res.status(201).json({
       success: true,
-      data: responseData
+      data: transformPostData(post)
     });
 
   } catch (error) {
@@ -110,38 +120,35 @@ exports.getPosts = async (req, res) => {
       }
     });
 
-    // Transform data for frontend
-    const transformedPosts = posts.map(post => ({
-      id: post.id,
-      image_url: post.image_url,
-      caption: post.caption,
-      created_at: post.created_at,
-      user: post.user,
-      like_count: post.likes.length,
-      comment_count: post.comments.length,
-      likes: post.likes,
-      comments: post.comments
-    }));
-
     res.json({
       success: true,
-      count: transformedPosts.length,
-      data: transformedPosts
+      count: posts.length,
+      data: posts.map(transformPostData)
     });
 
   } catch (error) {
     console.error('Error fetching posts:', error);
     res.status(500).json({ 
       success: false,
-      message: 'Failed to fetch posts'
+      message: 'Failed to fetch posts',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
-// In postController.js
+
+// Middleware to validate post ID
 exports.validatePostId = async (req, res, next) => {
   try {
+    const postId = parseInt(req.params.postId);
+    if (isNaN(postId)) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Invalid post ID format'
+      });
+    }
+
     const post = await prisma.post.findUnique({
-      where: { id: parseInt(req.params.postId) }
+      where: { id: postId }
     });
     
     if (!post) {
@@ -151,13 +158,14 @@ exports.validatePostId = async (req, res, next) => {
       });
     }
     
-    req.post = post; // Attach post to request
+    req.post = post;
     next();
   } catch (error) {
     next(error);
   }
 };
 
+// Middleware to check post ownership
 exports.checkPostOwnership = (req, res, next) => {
   if (req.post.user_id !== req.user.id) {
     return res.status(403).json({
@@ -168,10 +176,20 @@ exports.checkPostOwnership = (req, res, next) => {
   next();
 };
 
+// Middleware to validate user ID
 exports.validateUserId = async (req, res, next) => {
   try {
+    const userId = parseInt(req.params.userId);
+    if (isNaN(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID format'
+      });
+    }
+
     const user = await prisma.user.findUnique({
-      where: { id: parseInt(req.params.userId) }
+      where: { id: userId },
+      select: { id: true }
     });
     
     if (!user) {
@@ -232,23 +250,17 @@ exports.getPost = async (req, res) => {
       });
     }
 
-    // Transform data
-    const responseData = {
-      ...post,
-      like_count: post.likes.length,
-      comment_count: post.comments.length
-    };
-
     res.json({
       success: true,
-      data: responseData
+      data: transformPostData(post)
     });
 
   } catch (error) {
     console.error('Error fetching post:', error);
     res.status(500).json({ 
       success: false,
-      message: 'Failed to fetch post'
+      message: 'Failed to fetch post',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -256,31 +268,26 @@ exports.getPost = async (req, res) => {
 // Delete a post
 exports.deletePost = async (req, res) => {
   try {
-    const post = await prisma.post.findFirst({
-      where: {
-        id: parseInt(req.params.postId),
-        user_id: req.user.id
-      }
-    });
-
-    if (!post) {
-      return res.status(404).json({ 
-        success: false,
-        message: 'Post not found or unauthorized' 
-      });
-    }
-
-    // Get image path
-    const imagePath = path.join(__dirname, '..', 'uploads', path.basename(post.image_url));
+    // Get image path safely
+    const imagePath = path.join(
+      __dirname, 
+      '..', 
+      'uploads', 
+      path.basename(req.post.image_url)
+    );
 
     // Delete post from database
     await prisma.post.delete({
-      where: { id: post.id }
+      where: { id: req.post.id }
     });
 
-    // Delete image file
+    // Delete image file with error handling
     if (fs.existsSync(imagePath)) {
-      fs.unlinkSync(imagePath);
+      try {
+        fs.unlinkSync(imagePath);
+      } catch (err) {
+        console.error('Error deleting image file:', err);
+      }
     }
 
     res.json({
@@ -292,7 +299,8 @@ exports.deletePost = async (req, res) => {
     console.error('Error deleting post:', error);
     res.status(500).json({ 
       success: false,
-      message: 'Failed to delete post'
+      message: 'Failed to delete post',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -309,9 +317,10 @@ exports.getUserPosts = async (req, res) => {
             profile_picture: true
           }
         },
-        likes: {
+        _count: {
           select: {
-            user_id: true
+            likes: true,
+            comments: true
           }
         }
       },
@@ -320,23 +329,18 @@ exports.getUserPosts = async (req, res) => {
       }
     });
 
-    // Transform data
-    const transformedPosts = posts.map(post => ({
-      ...post,
-      like_count: post.likes.length
-    }));
-
     res.json({
       success: true,
-      count: transformedPosts.length,
-      data: transformedPosts
+      count: posts.length,
+      data: posts.map(transformPostData)
     });
 
   } catch (error) {
     console.error('Error fetching user posts:', error);
     res.status(500).json({ 
       success: false,
-      message: 'Failed to fetch user posts'
+      message: 'Failed to fetch user posts',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
