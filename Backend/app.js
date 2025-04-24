@@ -14,7 +14,7 @@ app.use('/api', require('./routes/userRoutes'));
 app.use('/api/posts', require('./routes/postRoutes'));
 // app.use('/api', require('./routes/likeRoutes')); 
 // app.use('/api/follows', require('./routes/followerRoutes')); 
-// app.use('/api', require('./routes/commentRoutes'));
+app.use('/api', require('./routes/commentRoutes'));
 
 // Health check
 app.get('/health', (req, res) => {
