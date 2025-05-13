@@ -13,14 +13,6 @@ exports.getUserById = async (req, res) => {
       });
     }
 
-    // Ensure the requested user is the authenticated user
-    if (userId !== req.user.id) {
-      return res.status(403).json({
-        success: false,
-        message: 'Unauthorized access'
-      });
-    }
-
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -50,54 +42,6 @@ exports.getUserById = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-};
-
-exports.updateProfile = async (req, res) => {
-  try {
-    let { full_name, bio } = req.body;
-
-    if (!full_name || full_name.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        errors: [{
-          param: 'full_name',
-          message: 'Full name is required'
-        }]
-      });
-    }
-
-    full_name = full_name.trim();
-    bio = bio ? bio.trim() : null;
-
-    const updatedUser = await prisma.user.update({
-      where: { id: req.user.id },
-      data: { 
-        full_name, 
-        bio 
-      },
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        full_name: true,
-        profile_picture: true,
-        bio: true,
-        created_at: true
-      }
-    });
-
-    res.json({ 
-      success: true, 
-      user: updatedUser 
-    });
-  } catch (error) {
-    console.error('Update profile error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to update profile',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
