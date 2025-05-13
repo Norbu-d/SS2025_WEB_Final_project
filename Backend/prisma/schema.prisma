@@ -15,15 +15,17 @@ model User {
   full_name       String
   bio             String?
   profile_picture String?
+  birth_month     Int?     
+  birth_day       Int?   
+  birth_year      Int?     
   created_at      DateTime @default(now())
 
   // Relationships
   posts     Post[]
   likes     Like[]
   comments  Comment[]
-  // ... other fields ...
-  followers  Follow[] @relation("following") // Users who follow this user
-  following  Follow[] @relation("follower")  // Users this user follows
+  followers Follow[] @relation("following")
+  following Follow[] @relation("follower")
 }
 
 model Post {
