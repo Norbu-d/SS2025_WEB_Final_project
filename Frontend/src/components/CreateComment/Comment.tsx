@@ -11,15 +11,15 @@ const formatTimeAgo = (dateString: string): string => {
   const diffInMinutes = Math.floor((now.getTime() - commentDate.getTime()) / (1000 * 60));
   
   if (diffInMinutes < 1) return 'now';
-  if (diffInMinutes < 60) return ${diffInMinutes}m;
-  if (diffInMinutes < 1440) return ${Math.floor(diffInMinutes / 60)}h;
-  return ${Math.floor(diffInMinutes / 1440)}d;
+  if (diffInMinutes < 60) return `${diffInMinutes}m`;
+  if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h`;
+  return `${Math.floor(diffInMinutes / 1440)}d`;
 };
 
 // API functions using cookie authentication
 const addCommentAPI = async ({ postId, content }: { postId: number, content: string }) => {
   try {
-    const response = await fetch(http://localhost:5000/api/posts/${postId}/comments, {
+    const response = await fetch(`http://localhost:5000/api/posts/${postId}/comments`, {
       method: 'POST',
       credentials: 'include',
       headers: {
@@ -43,7 +43,7 @@ const addCommentAPI = async ({ postId, content }: { postId: number, content: str
 
 const deleteCommentAPI = async (commentId: number) => {
   try {
-    const response = await fetch(http://localhost:5000/api/comments/${commentId}, {
+    const response = await fetch(`http://localhost:5000/api/comments/${commentId}`, {
       method: 'DELETE',
       credentials: 'include',
       headers: {
@@ -337,7 +337,7 @@ export function CommentSection({
         >
           {showComments 
             ? 'Hide comments' 
-            : `View ${commentCount === 1 ? '1 comment' : all ${commentCount} comments}`
+            : `View ${commentCount === 1 ? '1 comment' : `all ${commentCount} comments`}`
           }
         </button>
       )}
