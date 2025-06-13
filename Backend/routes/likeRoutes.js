@@ -1,15 +1,18 @@
 
 const express = require('express');
 const router = express.Router();
-const { likePost, unlikePost, getLikes } = require('../controllers/likeController'); // Destructured import
+const likeController = require('../controllers/likeController');
 const authMiddleware = require('../middleware/auth');
 
 // Like a post
-router.post('/posts/:postId/like', authMiddleware, likePost);
+router.post('/:postId', authMiddleware, likeController.likePost);
 
 // Unlike a post
-router.delete('/posts/:postId/like', authMiddleware, unlikePost);
+router.delete('/:postId', authMiddleware, likeController.unlikePost);
 
-// Get post likes
-router.get('/posts/:postId/likes', getLikes);
+// Get likes for a post
+router.get('/:postId', likeController.getLikes);
 
+
+
+module.exports = router;
