@@ -2,7 +2,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Configure upload directory (now separates posts from profile pictures)
+// Configure upload directory
 const uploadDir = path.join(__dirname, '../uploads/posts');
 
 // Create directory if missing
@@ -17,20 +17,26 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `post-${uniqueSuffix}${ext}`); // Clear post-specific naming
+    const userPrefix = req.user ? `user-${req.user.userId}-` : '';
+    cb(null, `post-${userPrefix}${uniqueSuffix}${ext}`);
   }
 });
 
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png|gif|webp/;
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = allowedTypes.test(file.mimetype);
+  const allowedMimes = [
+    'image/jpeg', 
+    'image/png', 
+    'image/gif', 
+    'image/webp'
+  ];
   
-  if (mimetype && extname) return cb(null, true);
-  cb(new Error('Only images (JPEG/JPG/PNG/GIF/WEBP) allowed!'), false);
+  if (allowedMimes.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Invalid file type. Only JPEG, PNG, GIF, and WEBP allowed!'), false);
+  }
 };
 
-// Key change: Now expects 'image' for posts (not 'profile_picture')
 const upload = multer({ 
   storage,
   fileFilter,
@@ -38,49 +44,69 @@ const upload = multer({
     fileSize: 5 * 1024 * 1024, // 5MB
     files: 1 
   }
-}).single('image'); // <<< Critical change for post uploads
+}).single('image');
 
 const handleUpload = (req, res, next) => {
   upload(req, res, (err) => {
-    // Handle missing file first
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: 'No file uploaded. Use field name "image" for posts.'
-      });
-    }
-
-    // Handle errors
+    // Handle errors first
     if (err) {
       let message = 'Upload failed';
+      let code = 'UPLOAD_ERROR';
+
       if (err instanceof multer.MulterError) {
         switch (err.code) {
           case 'LIMIT_FILE_SIZE':
-            message = 'Max file size is 5MB';
+            code = 'FILE_SIZE_LIMIT';
+            message = 'File size exceeds 5MB limit';
             break;
           case 'LIMIT_UNEXPECTED_FILE':
+            code = 'INVALID_FIELD_NAME';
             message = 'Use field name "image" for post uploads';
             break;
+          case 'LIMIT_FILE_COUNT':
+            code = 'TOO_MANY_FILES';
+            message = 'Only one file allowed per upload';
+            break;
         }
-      } else if (err.message.includes('Only images')) {
+      } else if (err.message.includes('Invalid file type')) {
+        code = 'INVALID_FILE_TYPE';
         message = err.message;
       }
 
-      // Cleanup failed upload
-      if (req.file) fs.unlinkSync(req.file.path);
+      // Cleanup failed upload if file exists
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+        } catch (cleanupErr) {
+          console.error('File cleanup failed:', cleanupErr);
+        }
+      }
       
       return res.status(400).json({ 
         success: false, 
-        message 
+        error: {
+          code,
+          message,
+          details: {
+            allowed_types: ['JPEG', 'PNG', 'GIF', 'WEBP'],
+            max_size: '5MB',
+            field_name: 'image'
+          }
+        }
       });
     }
 
-    // Windows path fix
-    if (process.platform === 'win32') {
+    // File is optional - proceed even if no file uploaded
+    // The controller will handle validation for required content
+    if (req.file) {
+      // Normalize path for cross-platform compatibility
       req.file.path = req.file.path.replace(/\\/g, '/');
+      
+      // Add additional file info
+      req.file.url = `/uploads/posts/${req.file.filename}`;
     }
 
-    next(); // Successful upload
+    next(); // Proceed to next middleware
   });
 };
 

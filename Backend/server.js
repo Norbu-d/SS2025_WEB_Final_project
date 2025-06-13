@@ -1,7 +1,7 @@
 // server.js
 require('dotenv').config();
 const http = require('http');
-const app = require('./app'); // This now properly imports the Express app
+const app = require('./app'); // Import the Express app
 const { PrismaClient } = require('@prisma/client');
 const logger = require('./utils/logger');
 
@@ -10,16 +10,16 @@ const port = process.env.PORT || 5000;
 
 const startServer = async () => {
   try {
-    // Test database connection
+    // Connect to the database
     await prisma.$connect();
     logger.info('✅ Database connected via Prisma');
 
-    // Attach Prisma to app
+    // Attach Prisma to app locals
     app.locals.prisma = prisma;
 
     const server = http.createServer(app);
 
-    // Graceful shutdown handler
+    // Graceful shutdown
     const gracefulShutdown = async () => {
       await prisma.$disconnect();
       server.close(() => {
@@ -28,7 +28,6 @@ const startServer = async () => {
       });
     };
 
-    // Process event handlers
     process.on('SIGTERM', gracefulShutdown);
     process.on('SIGINT', gracefulShutdown);
     process.on('uncaughtException', (err) => {

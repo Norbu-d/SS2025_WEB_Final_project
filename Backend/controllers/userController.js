@@ -3,6 +3,43 @@ const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
 
+exports.searchUsernames = async (req, res) => {
+  try {
+    console.log("Search endpoint hit with query:", req.query.query);
+    
+    const { query } = req.query;
+
+    if (!query || query.trim() === '') {
+      return res.json({
+        success: true,
+        users: []  // Return empty array instead of error
+      });
+    }
+
+    // Using raw SQL for guaranteed case-insensitive search
+    const users = await prisma.$queryRaw`
+      SELECT id, username 
+      FROM User 
+      WHERE username COLLATE utf8mb4_general_ci LIKE ${'%' + query + '%'}
+      LIMIT 10
+    `;
+
+    console.log(`Found ${users.length} users for query: "${query}"`);
+    
+    res.json({
+      success: true,
+      users
+    });
+  } catch (error) {
+    console.error('Search usernames error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to search usernames',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 exports.getUserById = async (req, res) => {
   try {
     const userId = parseInt(req.params.id);
@@ -42,6 +79,107 @@ exports.getUserById = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Add this to userController.js
+exports.getUserProfile = async (req, res) => {
+  try {
+    const userId = parseInt(req.params.userId);
+    if (isNaN(userId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID format'
+      });
+    }
+
+    // Get user profile
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        username: true,
+        full_name: true,
+        profile_picture: true,
+        bio: true,
+        created_at: true,
+        _count: {
+          select: {
+            posts: true,
+            followers: true,
+            following: true
+          }
+        }
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Get user's posts
+    const posts = await prisma.post.findMany({
+      where: { user_id: userId },
+      orderBy: { created_at: 'desc' },
+      include: {
+        likes: true,
+        comments: true
+      }
+    });
+
+    // Get follow status (if current user is following this user)
+    let isFollowing = false;
+    if (req.user) {
+      const follow = await prisma.follow.findFirst({
+        where: {
+          follower_id: req.user.id,
+          following_id: userId
+        }
+      });
+      isFollowing = !!follow;
+    }
+
+    res.json({
+      success: true,
+      profile: {
+        ...user,
+        posts,
+        isFollowing
+      }
+    });
+  } catch (error) {
+    console.error('Get user profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+exports.listAllUsers = async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        username: true
+      }
+    });
+
+    res.json({
+      success: true,
+      users
+    });
+  } catch (error) {
+    console.error('List users error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to list users',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }

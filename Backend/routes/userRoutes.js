@@ -1,3 +1,4 @@
+// routes/userRoutes.js
 const express = require('express');
 const router = express.Router();
 const { validate, handleValidationErrors } = require('../utils/validation');
@@ -5,11 +6,17 @@ const userController = require('../controllers/userController');
 const authMiddleware = require('../middleware/auth');
 const handleUpload = require('../utils/upload');
 
-// GET User by ID
-router.get('/users/:id', 
+// Search usernames - CORRECT PATH
+router.get('/search-usernames', userController.searchUsernames);
+
+// GET User by ID - CORRECT PATH
+router.get('/:id', 
   authMiddleware, 
   userController.getUserById
 );
+
+router.get('/profile/:userId', authMiddleware, userController.getUserProfile);
+
 
 // UPDATE Profile
 router.put(
@@ -27,6 +34,9 @@ router.put(
   handleUpload,
   userController.updateProfilePicture
 );
+
+// List all users
+router.get('/', userController.listAllUsers);
 
 // CHANGE Password
 router.put(

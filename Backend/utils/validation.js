@@ -31,13 +31,12 @@ const validateRegister = [
       return true;
     }),
 
-  body("password")
-    .notEmpty()
-    .withMessage("Password is required")
-    .isLength({ min: 8 })
-    .withMessage("Password must be at least 8 characters")
-    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).+$/)
-    .withMessage("Password must include uppercase, lowercase, number and special character"),
+    body("password")
+      .notEmpty()
+      .withMessage("Password is required")
+      .isLength({ min: 8 })
+      .withMessage("Password must be at least 8 characters"),
+
 
   body("full_name")
     .trim()
@@ -93,8 +92,6 @@ const validateChangePassword = [
     .withMessage("New password is required")
     .isLength({ min: 8 })
     .withMessage("Password must be at least 8 characters")
-    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).+$/)
-    .withMessage("Password must include uppercase, lowercase, number and special character")
     .custom((value, { req }) => {
       if (value === req.body.currentPassword) {
         throw new Error("New password must be different from current password");

@@ -170,15 +170,16 @@ const login = async (req, res) => {
   }
 };
 
+// In your authController
 const verifyToken = async (req, res) => {
   try {
+    // The middleware should have already verified the token
     const user = await prisma.user.findUnique({
       where: { id: req.user.userId },
       select: {
         id: true,
         username: true,
         email: true,
-        full_name: true,
         profile_picture: true
       }
     });
@@ -196,11 +197,56 @@ const verifyToken = async (req, res) => {
     });
 
   } catch (error) {
-    logger.error('Token verification error:', error);
+    console.error('Token verification error:', error);
     return res.status(500).json({
       success: false,
-      message: 'Token verification failed',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      message: 'Token verification failed'
+    });
+  }
+};
+
+const logout = (req, res) => {
+  try {
+    res.clearCookie('token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/'
+    });
+
+    return res.json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    return res.status(500).json({
+      success: false,
+      errors: [{ message: 'Logout failed' }]
+    });
+  }
+};
+
+// controllers/authController.js
+const checkAuth = async (req, res) => {
+  try {
+    if (req.user) {
+      return res.json({
+        success: true,
+        user: {
+          id: req.user.id,
+          username: req.user.username,
+          email: req.user.email,
+          profile_picture: req.user.profile_picture
+        }
+      });
+    }
+    res.json({ success: false, user: null });
+  } catch (error) {
+    console.error('Auth check error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Authentication check failed'
     });
   }
 };
@@ -208,5 +254,7 @@ const verifyToken = async (req, res) => {
 module.exports = {
   register,
   login,
-  verifyToken
+  verifyToken,
+  logout, 
+  checkAuth
 };
