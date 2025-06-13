@@ -1,18 +1,15 @@
-// routes/likeRoutes.js
+
 const express = require('express');
 const router = express.Router();
-const likeController = require('../controllers/likeController');
+const { likePost, unlikePost, getLikes } = require('../controllers/likeController'); // Destructured import
 const authMiddleware = require('../middleware/auth');
 
 // Like a post
-router.post('/:postId', authMiddleware, likeController.likePost);
+router.post('/posts/:postId/like', authMiddleware, likePost);
 
 // Unlike a post
-router.delete('/:postId', authMiddleware, likeController.unlikePost);
+router.delete('/posts/:postId/like', authMiddleware, unlikePost);
 
-// Get likes for a post
-router.get('/:postId', likeController.getLikes);
+// Get post likes
+router.get('/posts/:postId/likes', getLikes);
 
-
-
-module.exports = router;
