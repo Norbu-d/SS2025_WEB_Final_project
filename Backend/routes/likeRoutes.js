@@ -13,4 +13,6 @@ router.delete('/:postId', authMiddleware, likeController.unlikePost);
 // Get likes for a post
 router.get('/:postId', likeController.getLikes);
 
+
+
 module.exports = router;
