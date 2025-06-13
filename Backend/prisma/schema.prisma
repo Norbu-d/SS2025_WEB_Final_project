@@ -77,7 +77,6 @@ model Follow {
   @@unique([follower_id, following_id])
 }
 
-// Chat functionality models
 model Conversation {
   id           Int            @id @default(autoincrement())
   created_at   DateTime       @default(now())
